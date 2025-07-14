@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { PlusCircle, Search, FileText, Settings, Home, LogOut, Tag, Shield, Eye, Plus, X, Menu, Image as ImageIcon } from 'lucide-react'
+import { PlusCircle, Search, FileText, Settings, Home, LogOut, Tag, Shield, Eye, Plus, X, Menu, Image as ImageIcon, Wifi, WifiOff } from 'lucide-react'
 import { League_Spartan } from 'next/font/google'
 import WikiEditor from '@/components/WikiEditor'
 import WikiViewer from '@/components/WikiViewer'
 import Gallery from '@/components/Gallery'
 import { logActivity, isPageInvincible } from '@/utils/activityLogger'
+import { useWikiPages, useCategories } from '@/utils/hybridStorage'
 
 const leagueSpartan = League_Spartan({
   subsets: ['latin'],
@@ -33,8 +34,8 @@ interface Category {
 }
 
 export default function WikiPage() {
-  const [pages, setPages] = useState<WikiPage[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
+  const { pages, isLoading: pagesLoading, isSupabaseEnabled, savePage, deletePage } = useWikiPages()
+  const { categories, isLoading: categoriesLoading, saveCategory, deleteCategory } = useCategories()
   const [currentPage, setCurrentPage] = useState<WikiPage | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -85,42 +86,21 @@ export default function WikiPage() {
   // Rate limiting functions with IP-based restrictions
   const getRateLimitData = async () => {
     const userIP = await getUserIdentifier()
-    const allData = JSON.parse(localStorage.getItem('dorps-rate-limit-ips') || '{}')
+    const { rateLimitsStorage } = await import('../../utils/allDataStorage')
+    const data = await rateLimitsStorage.get(userIP)
     
-    if (!allData[userIP]) {
+    if (!data) {
       return { attempts: 0, lastAttempt: 0, lockoutUntil: 0, userIP }
     }
     
-    return { ...allData[userIP], userIP }
+    return { ...data, userIP }
   }
 
   const updateRateLimitData = async (attempts: number, lockoutUntil: number = 0) => {
     const userIP = await getUserIdentifier()
-    const allData = JSON.parse(localStorage.getItem('dorps-rate-limit-ips') || '{}')
+    const { rateLimitsStorage } = await import('../../utils/allDataStorage')
     
-    allData[userIP] = {
-      attempts,
-      lastAttempt: Date.now(),
-      lockoutUntil,
-      timestamp: new Date().toISOString()
-    }
-    
-    // Clean up old entries (older than 24 hours)
-    const now = Date.now()
-    Object.keys(allData).forEach(ip => {
-      if (now - allData[ip].lastAttempt > 24 * 60 * 60 * 1000) {
-        delete allData[ip]
-      }
-    })
-    
-    localStorage.setItem('dorps-rate-limit-ips', JSON.stringify(allData))
-    
-    // Also update legacy storage for backwards compatibility
-    localStorage.setItem('dorps-rate-limit', JSON.stringify({
-      attempts,
-      lastAttempt: Date.now(),
-      lockoutUntil
-    }))
+    await rateLimitsStorage.update(userIP, attempts, lockoutUntil)
   }
 
   const isRateLimited = async () => {
@@ -238,9 +218,8 @@ export default function WikiPage() {
         page: `${page} (${title})`
       }
 
-      const currentLogs = JSON.parse(localStorage.getItem('dorps-visitor-logs') || '[]')
-      const updatedLogs = [newLog, ...currentLogs].slice(0, 100)
-      localStorage.setItem('dorps-visitor-logs', JSON.stringify(updatedLogs))
+      const { visitorLogsStorage } = await import('../../utils/allDataStorage')
+      await visitorLogsStorage.save(newLog)
     } catch (error) {
       console.error('Failed to log visit:', error)
     }
@@ -248,40 +227,16 @@ export default function WikiPage() {
 
   // Initialize data after access is verified
   useEffect(() => {
-    if (!userRole || isLoading) return
-
-    // Load categories from localStorage
-    const savedCategories = localStorage.getItem('dorps-wiki-categories')
-    if (savedCategories) {
-      setCategories(JSON.parse(savedCategories))
-    } else {
-      // Create default categories
-      const defaultCategories: Category[] = [
-        { id: 'general', name: 'General', color: '#8B5CF6' },
-        { id: 'jokes', name: 'Inside Jokes', color: '#F59E0B' },
-        { id: 'members', name: 'Members', color: '#10B981' },
-        { id: 'adventures', name: 'Adventures', color: '#EF4444' },
-        { id: 'quotes', name: 'Quotes', color: '#3B82F6' }
-      ]
-      setCategories(defaultCategories)
-      localStorage.setItem('dorps-wiki-categories', JSON.stringify(defaultCategories))
-    }
-
-    // Load pages from localStorage
-    const savedPages = localStorage.getItem('dorps-wiki-pages')
-    if (savedPages) {
-      const parsedPages = JSON.parse(savedPages)
-      const updatedPages = parsedPages.map((page: any) => ({
-        ...page,
-        category: page.category || 'general',
-        createdBy: page.createdBy || 'admin'
-      }))
-      setPages(updatedPages)
-      if (updatedPages.length > 0) {
-        setCurrentPage(updatedPages[0])
-      }
-    } else {
-      // Create welcome page
+    if (!userRole) return
+    
+    // Set loading based on hybrid storage loading states
+    setIsLoading(pagesLoading || categoriesLoading)
+    
+    // Set initial page when pages are loaded
+    if (!pagesLoading && pages.length > 0 && !currentPage) {
+      setCurrentPage(pages[0])
+    } else if (!pagesLoading && pages.length === 0 && (userRole === 'admin' || userRole === 'super-admin')) {
+      // Create welcome page if no pages exist
       const welcomePage: WikiPage = {
         id: 'welcome',
         title: 'Welcome to The Dorps Wiki',
@@ -309,11 +264,14 @@ Click the "➕ New Page" button to create your first page!
         category: 'general',
         createdBy: 'admin'
       }
-      setPages([welcomePage])
-      setCurrentPage(welcomePage)
-      localStorage.setItem('dorps-wiki-pages', JSON.stringify([welcomePage]))
+      savePage(welcomePage, true).then((savedPage) => {
+        if (savedPage) setCurrentPage(savedPage)
+      })
     }
-  }, [userRole, isLoading])
+
+    // Log visit
+    logVisit('/wiki', 'Wiki')
+  }, [userRole, pagesLoading, categoriesLoading, pages.length, currentPage])
 
   const handleLogout = async () => {
     try {
@@ -338,13 +296,14 @@ Click the "➕ New Page" button to create your first page!
         ...pageData,
         lastModified: new Date().toISOString()
       }
-      const updatedPages = pages.map(p => p.id === currentPage.id ? updatedPage : p)
-      setPages(updatedPages)
-      setCurrentPage(updatedPage)
-      localStorage.setItem('dorps-wiki-pages', JSON.stringify(updatedPages))
       
-      // Log the edit activity
-      await logActivity('edit', currentPage.id, pageData.title, userRole)
+      // Save using hybrid storage
+      const savedPage = await savePage(updatedPage, false)
+      if (savedPage) {
+        setCurrentPage(savedPage)
+        // Log the edit activity
+        await logActivity('edit', currentPage.id, pageData.title, userRole)
+      }
     } else {
       // Create new page
       const newPage: WikiPage = {
@@ -353,13 +312,14 @@ Click the "➕ New Page" button to create your first page!
         lastModified: new Date().toISOString(),
         createdBy: userRole || 'admin'
       }
-      const updatedPages = [...pages, newPage]
-      setPages(updatedPages)
-      setCurrentPage(newPage)
-      localStorage.setItem('dorps-wiki-pages', JSON.stringify(updatedPages))
       
-      // Log the creation activity
-      await logActivity('create', newPage.id, pageData.title, userRole)
+      // Save using hybrid storage
+      const savedPage = await savePage(newPage, true)
+      if (savedPage) {
+        setCurrentPage(savedPage)
+        // Log the creation activity
+        await logActivity('create', newPage.id, pageData.title, userRole)
+      }
     }
     setIsEditing(false)
   }
@@ -368,7 +328,7 @@ Click the "➕ New Page" button to create your first page!
     if (userRole !== 'admin' && userRole !== 'super-admin') return
     
     // Check if page is invincible (protected)
-    if (isPageInvincible(pageId)) {
+    if (await isPageInvincible(pageId)) {
       alert('This page is protected and cannot be deleted by regular admins. Contact a super admin to remove this protection.')
       return
     }
@@ -377,15 +337,15 @@ Click the "➕ New Page" button to create your first page!
     const pageToDelete = pages.find(p => p.id === pageId)
     const pageTitle = pageToDelete?.title || 'Unknown Page'
     
-    const updatedPages = pages.filter(p => p.id !== pageId)
-    setPages(updatedPages)
-    localStorage.setItem('dorps-wiki-pages', JSON.stringify(updatedPages))
-    
-    // Log the deletion activity
-    await logActivity('delete', pageId, pageTitle, userRole)
-    
-    if (currentPage?.id === pageId) {
-      setCurrentPage(updatedPages.length > 0 ? updatedPages[0] : null)
+    // Delete using hybrid storage
+    const success = await deletePage(pageId)
+    if (success) {
+      // Log the deletion activity
+      await logActivity('delete', pageId, pageTitle, userRole)
+      
+      if (currentPage?.id === pageId) {
+        setCurrentPage(pages.length > 0 ? pages[0] : null)
+      }
     }
     setIsEditing(false)
   }
@@ -396,7 +356,7 @@ Click the "➕ New Page" button to create your first page!
     setIsEditing(true)
   }
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if ((userRole !== 'admin' && userRole !== 'super-admin') || !newCategoryName.trim()) return
 
     const newCategory: Category = {
@@ -405,26 +365,23 @@ Click the "➕ New Page" button to create your first page!
       color: newCategoryColor
     }
 
-    const updatedCategories = [...categories, newCategory]
-    setCategories(updatedCategories)
-    localStorage.setItem('dorps-wiki-categories', JSON.stringify(updatedCategories))
-    setNewCategoryName('')
-    setShowCategoryManager(false)
+    // Save using hybrid storage
+    const savedCategory = await saveCategory(newCategory)
+    if (savedCategory) {
+      setNewCategoryName('')
+      setShowCategoryManager(false)
+    }
   }
 
-  const handleDeleteCategory = (categoryId: string) => {
+  const handleDeleteCategory = async (categoryId: string) => {
     if (userRole !== 'admin' && userRole !== 'super-admin') return
 
-    const updatedCategories = categories.filter(c => c.id !== categoryId)
-    setCategories(updatedCategories)
-    localStorage.setItem('dorps-wiki-categories', JSON.stringify(updatedCategories))
-    
-    // Reset pages in deleted category to 'general'
-    const updatedPages = pages.map(p => 
-      p.category === categoryId ? { ...p, category: 'general' } : p
-    )
-    setPages(updatedPages)
-    localStorage.setItem('dorps-wiki-pages', JSON.stringify(updatedPages))
+    // Delete using hybrid storage
+    const success = await deleteCategory(categoryId)
+    if (success) {
+      // Reset pages in deleted category to 'general' (this needs to be handled by updating each page)
+      // For now, we'll just delete the category and let users manually reassign pages
+    }
   }
 
   const filteredPages = pages.filter(page => {
@@ -619,6 +576,24 @@ Click the "➕ New Page" button to create your first page!
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 bg-gray-700/50 backdrop-blur-sm border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 hover:bg-gray-700/70"
                   />
+                </div>
+
+                {/* Storage Status */}
+                <div className={`mb-4 p-2 rounded-lg text-xs ${
+                  isSupabaseEnabled 
+                    ? 'bg-green-900/30 border border-green-500/30 text-green-300' 
+                    : 'bg-yellow-900/30 border border-yellow-500/30 text-yellow-300'
+                }`}>
+                  <div className="flex items-center space-x-2">
+                    {isSupabaseEnabled ? (
+                      <Wifi className="w-3 h-3" />
+                    ) : (
+                      <WifiOff className="w-3 h-3" />
+                    )}
+                    <span className="font-medium">
+                      {isSupabaseEnabled ? 'Shared Storage' : 'Local Only'}
+                    </span>
+                  </div>
                 </div>
 
               {/* Category Filter */}

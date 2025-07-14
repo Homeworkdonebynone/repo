@@ -66,6 +66,7 @@ export async function logActivity(
   userRole: 'viewer' | 'admin' | 'super-admin'
 ): Promise<void> {
   try {
+    const { activityLogsStorage } = await import('./allDataStorage')
     const ip = await getClientIP()
     const country = await getCountryFromIP(ip)
     
@@ -81,14 +82,8 @@ export async function logActivity(
       userAgent: navigator.userAgent
     }
 
-    // Get existing logs
-    const existingLogs = JSON.parse(localStorage.getItem('dorps-activity-logs') || '[]')
-    
-    // Add new log and keep only the last 500 entries
-    const updatedLogs = [activityLog, ...existingLogs].slice(0, 500)
-    
-    // Save back to localStorage
-    localStorage.setItem('dorps-activity-logs', JSON.stringify(updatedLogs))
+    // Save using hybrid storage
+    await activityLogsStorage.save(activityLog)
     
     console.log(`Activity logged: ${action} on "${pageTitle}" by ${userRole} from ${country} (${ip})`)
   } catch (error) {
@@ -97,10 +92,10 @@ export async function logActivity(
 }
 
 // Function to check if a page is invincible (protected from deletion)
-export function isPageInvincible(pageId: string): boolean {
+export async function isPageInvincible(pageId: string): Promise<boolean> {
   try {
-    const invinciblePages = JSON.parse(localStorage.getItem('dorps-invincible-pages') || '[]')
-    return invinciblePages.includes(pageId)
+    const { invinciblePagesStorage } = await import('./allDataStorage')
+    return await invinciblePagesStorage.isInvincible(pageId)
   } catch (error) {
     console.error('Failed to check page invincibility:', error)
     return false
@@ -108,9 +103,10 @@ export function isPageInvincible(pageId: string): boolean {
 }
 
 // Function to get all activity logs (for admin panel)
-export function getAllActivityLogs(): ActivityLog[] {
+export async function getAllActivityLogs(): Promise<ActivityLog[]> {
   try {
-    return JSON.parse(localStorage.getItem('dorps-activity-logs') || '[]')
+    const { activityLogsStorage } = await import('./allDataStorage')
+    return await activityLogsStorage.getAll()
   } catch (error) {
     console.error('Failed to get activity logs:', error)
     return []

@@ -43,7 +43,7 @@ interface ActivityLog {
   action: 'create' | 'edit' | 'delete'
   pageId: string
   pageTitle: string
-  userRole: 'viewer' | 'admin'
+  userRole: 'viewer' | 'admin' | 'super-admin'
   ip: string
   country: string
   userAgent: string
@@ -105,44 +105,49 @@ export default function AdminPanel() {
       router.push('/')
     }
   }
-  const loadAdminData = () => {
-    // Load visitor logs
-    const savedLogs = localStorage.getItem('dorps-visitor-logs')
-    if (savedLogs) {
-      setVisitorLogs(JSON.parse(savedLogs))
+  const loadAdminData = async () => {
+    try {
+      // Import hybrid storage utilities
+      const { 
+        visitorLogsStorage, 
+        rateLimitsStorage, 
+        invinciblePagesStorage, 
+        activityLogsStorage 
+      } = await import('../../utils/allDataStorage')
+
+      // Load visitor logs
+      const logs = await visitorLogsStorage.getAll()
+      setVisitorLogs(logs)
+
+      // Load rate limit data
+      const rateLimits = await rateLimitsStorage.getAll()
+      setRateLimitData(rateLimits)
+
+      // Load all wiki pages
+      const savedPages = localStorage.getItem('dorps-wiki-pages')
+      if (savedPages) {
+        setAllPages(JSON.parse(savedPages))
+      }
+
+      // Load invincible pages list
+      const invinciblePageIds = await invinciblePagesStorage.getAll()
+      setInvinciblePages(invinciblePageIds)
+
+      // Load activity logs
+      const activityLogsData = await activityLogsStorage.getAll()
+      setActivityLogs(activityLogsData)
+
+      // Load custom users (since only super admin can access admin panel)
+      loadCustomUsers()
+
+      // Log this admin visit
+      logVisit('/admin', 'Admin Panel')
+
+      setIsLoading(false)
+    } catch (error) {
+      console.error('Error loading admin data:', error)
+      setIsLoading(false)
     }
-
-    // Load rate limit data
-    const savedRateLimits = localStorage.getItem('dorps-rate-limit-ips')
-    if (savedRateLimits) {
-      setRateLimitData(JSON.parse(savedRateLimits))
-    }
-
-    // Load all wiki pages
-    const savedPages = localStorage.getItem('dorps-wiki-pages')
-    if (savedPages) {
-      setAllPages(JSON.parse(savedPages))
-    }
-
-    // Load invincible pages list
-    const savedInvinciblePages = localStorage.getItem('dorps-invincible-pages')
-    if (savedInvinciblePages) {
-      setInvinciblePages(JSON.parse(savedInvinciblePages))
-    }
-
-    // Load activity logs
-    const savedActivityLogs = localStorage.getItem('dorps-activity-logs')
-    if (savedActivityLogs) {
-      setActivityLogs(JSON.parse(savedActivityLogs))
-    }
-
-    // Load custom users (since only super admin can access admin panel)
-    loadCustomUsers()
-
-    // Log this admin visit
-    logVisit('/admin', 'Admin Panel')
-
-    setIsLoading(false)
   }
 
   // Get user IP address (same method as used in homepage)
@@ -184,35 +189,43 @@ export default function AdminPanel() {
         page: `${page} (${title})`
       }
 
-      const currentLogs = JSON.parse(localStorage.getItem('dorps-visitor-logs') || '[]')
-      const updatedLogs = [newLog, ...currentLogs].slice(0, 100) // Keep last 100 visits
+      const { visitorLogsStorage } = await import('../../utils/allDataStorage')
+      await visitorLogsStorage.save(newLog)
       
-      localStorage.setItem('dorps-visitor-logs', JSON.stringify(updatedLogs))
-      setVisitorLogs(updatedLogs)
+      // Update local state
+      setVisitorLogs(prev => [newLog, ...prev].slice(0, 100))
     } catch (error) {
       console.error('Failed to log visit:', error)
     }
   }
 
-  const clearRateLimit = (ip: string) => {
+  const clearRateLimit = async (ip: string) => {
+    const { rateLimitsStorage } = await import('../../utils/allDataStorage')
+    await rateLimitsStorage.clear(ip)
+    
     const updatedData = { ...rateLimitData }
     delete updatedData[ip]
     setRateLimitData(updatedData)
-    localStorage.setItem('dorps-rate-limit-ips', JSON.stringify(updatedData))
   }
 
-  const clearAllRateLimits = () => {
+  const clearAllRateLimits = async () => {
+    const { rateLimitsStorage } = await import('../../utils/allDataStorage')
+    await rateLimitsStorage.clear()
+    
     setRateLimitData({})
-    localStorage.setItem('dorps-rate-limit-ips', JSON.stringify({}))
   }
 
-  const toggleInvinciblePage = (pageId: string) => {
-    const updatedInvinciblePages = invinciblePages.includes(pageId)
+  const toggleInvinciblePage = async (pageId: string) => {
+    const { invinciblePagesStorage } = await import('../../utils/allDataStorage')
+    const isCurrentlyInvincible = invinciblePages.includes(pageId)
+    
+    await invinciblePagesStorage.toggle(pageId, !isCurrentlyInvincible, 'super-admin')
+    
+    const updatedInvinciblePages = isCurrentlyInvincible
       ? invinciblePages.filter(id => id !== pageId)
       : [...invinciblePages, pageId]
     
     setInvinciblePages(updatedInvinciblePages)
-    localStorage.setItem('dorps-invincible-pages', JSON.stringify(updatedInvinciblePages))
   }
 
   const getCountryFromIP = async (ip: string): Promise<string> => {
@@ -276,9 +289,11 @@ export default function AdminPanel() {
     return flags[country] || '🌍'
   }
 
-  const clearVisitorLogs = () => {
+  const clearVisitorLogs = async () => {
+    const { visitorLogsStorage } = await import('../../utils/allDataStorage')
+    await visitorLogsStorage.clear()
+    
     setVisitorLogs([])
-    localStorage.setItem('dorps-visitor-logs', JSON.stringify([]))
   }
 
   // User management functions (super admin only)

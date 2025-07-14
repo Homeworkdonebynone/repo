@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Edit, Trash2, Shield } from 'lucide-react'
 import { League_Spartan } from 'next/font/google'
@@ -42,8 +42,21 @@ export default function WikiViewer({ page, categories, onEdit, onDelete, userRol
   const [lightboxImages, setLightboxImages] = useState<string[]>([])
   const [lightboxIndex, setLightboxIndex] = useState(0)
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
-  
-  const pageIsInvincible = isPageInvincible(page.id)
+  const [pageIsInvincible, setPageIsInvincible] = useState(false)
+
+  // Check if page is invincible on mount
+  useEffect(() => {
+    const checkInvincible = async () => {
+      try {
+        const invincible = await isPageInvincible(page.id)
+        setPageIsInvincible(invincible)
+      } catch (error) {
+        console.error('Error checking page invincibility:', error)
+        setPageIsInvincible(false)
+      }
+    }
+    checkInvincible()
+  }, [page.id])
 
   const openLightbox = (imageSrc: string) => {
     // Extract all image URLs from the content

@@ -72,42 +72,21 @@ export default function ComingSoonPage() {
   // Rate limiting functions with IP-based restrictions
   const getRateLimitData = async () => {
     const userIP = await getUserIdentifier()
-    const allData = JSON.parse(localStorage.getItem('dorps-rate-limit-ips') || '{}')
+    const { rateLimitsStorage } = await import('../utils/allDataStorage')
+    const data = await rateLimitsStorage.get(userIP)
     
-    if (!allData[userIP]) {
+    if (!data) {
       return { attempts: 0, lastAttempt: 0, lockoutUntil: 0, userIP }
     }
     
-    return { ...allData[userIP], userIP }
+    return { ...data, userIP }
   }
 
   const updateRateLimitData = async (attempts: number, lockoutUntil: number = 0) => {
     const userIP = await getUserIdentifier()
-    const allData = JSON.parse(localStorage.getItem('dorps-rate-limit-ips') || '{}')
+    const { rateLimitsStorage } = await import('../utils/allDataStorage')
     
-    allData[userIP] = {
-      attempts,
-      lastAttempt: Date.now(),
-      lockoutUntil,
-      timestamp: new Date().toISOString()
-    }
-    
-    // Clean up old entries (older than 24 hours)
-    const now = Date.now()
-    Object.keys(allData).forEach(ip => {
-      if (now - allData[ip].lastAttempt > 24 * 60 * 60 * 1000) {
-        delete allData[ip]
-      }
-    })
-    
-    localStorage.setItem('dorps-rate-limit-ips', JSON.stringify(allData))
-    
-    // Also update legacy storage for backwards compatibility
-    localStorage.setItem('dorps-rate-limit', JSON.stringify({
-      attempts,
-      lastAttempt: Date.now(),
-      lockoutUntil
-    }))
+    await rateLimitsStorage.update(userIP, attempts, lockoutUntil)
   }
 
   const isRateLimited = async () => {
@@ -287,9 +266,8 @@ export default function ComingSoonPage() {
         page: `${page} (${title})`
       }
 
-      const currentLogs = JSON.parse(localStorage.getItem('dorps-visitor-logs') || '[]')
-      const updatedLogs = [newLog, ...currentLogs].slice(0, 100)
-      localStorage.setItem('dorps-visitor-logs', JSON.stringify(updatedLogs))
+      const { visitorLogsStorage } = await import('../utils/allDataStorage')
+      await visitorLogsStorage.save(newLog)
     } catch (error) {
       console.error('Failed to log visit:', error)
     }

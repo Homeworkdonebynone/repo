@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Image as ImageIcon, Play, Calendar, Clock, Eye, X } from 'lucide-react'
+import { Plus, Trash2, Image as ImageIcon, Play, Calendar, Clock, Eye, X, Wifi, WifiOff } from 'lucide-react'
 import { League_Spartan } from 'next/font/google'
 import ImageLightbox from './ImageLightbox'
+import { useGalleryItems } from '@/utils/hybridStorage'
 
 const leagueSpartan = League_Spartan({
   subsets: ['latin'],
@@ -19,7 +20,7 @@ interface GalleryItem {
   url: string
   title: string
   description: string
-  addedBy: UserRole
+  addedBy: UserRole | string
   addedAt: string
   thumbnailUrl?: string
 }
@@ -29,7 +30,7 @@ interface GalleryProps {
 }
 
 export default function Gallery({ userRole }: GalleryProps) {
-  const [items, setItems] = useState<GalleryItem[]>([])
+  const { items, isLoading, isSupabaseEnabled, saveItem, deleteItem } = useGalleryItems()
   const [showAddForm, setShowAddForm] = useState(false)
   const [newItem, setNewItem] = useState({
     type: 'image' as 'image' | 'video',
@@ -41,14 +42,6 @@ export default function Gallery({ userRole }: GalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState(0)
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null)
-
-  // Load gallery items from localStorage
-  useEffect(() => {
-    const savedItems = localStorage.getItem('dorps-gallery-items')
-    if (savedItems) {
-      setItems(JSON.parse(savedItems))
-    }
-  }, [])
 
   // Function to extract YouTube video ID
   const getYouTubeVideoId = (url: string): string | null => {
@@ -72,7 +65,7 @@ export default function Gallery({ userRole }: GalleryProps) {
     return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
   }
 
-  const handleAddItem = () => {
+  const handleAddItem = async () => {
     if (!newItem.url.trim() || !newItem.title.trim()) return
 
     let processedItem = { ...newItem }
@@ -94,9 +87,8 @@ export default function Gallery({ userRole }: GalleryProps) {
       addedAt: new Date().toISOString()
     }
 
-    const updatedItems = [galleryItem, ...items]
-    setItems(updatedItems)
-    localStorage.setItem('dorps-gallery-items', JSON.stringify(updatedItems))
+    // Save using hybrid storage
+    await saveItem(galleryItem)
     
     // Reset form
     setNewItem({
@@ -108,12 +100,11 @@ export default function Gallery({ userRole }: GalleryProps) {
     setShowAddForm(false)
   }
 
-  const handleDeleteItem = (itemId: string) => {
+  const handleDeleteItem = async (itemId: string) => {
     if (userRole !== 'admin' && userRole !== 'super-admin') return
     
-    const updatedItems = items.filter(item => item.id !== itemId)
-    setItems(updatedItems)
-    localStorage.setItem('dorps-gallery-items', JSON.stringify(updatedItems))
+    // Delete using hybrid storage
+    await deleteItem(itemId)
   }
 
   const openImageLightbox = (imageUrl: string) => {
@@ -153,6 +144,17 @@ export default function Gallery({ userRole }: GalleryProps) {
     }
   }
 
+  if (isLoading) {
+    return (
+      <div className={`min-h-screen bg-gray-900 text-white flex items-center justify-center ${leagueSpartan.className}`}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading Gallery...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`min-h-screen bg-gray-900 text-white p-4 md:p-6 ${leagueSpartan.className}`}>
       <div className="max-w-7xl mx-auto">
@@ -175,7 +177,7 @@ export default function Gallery({ userRole }: GalleryProps) {
             )}
           </div>
 
-          {/* Stats */}
+          {/* Storage Status */}
           <div className="flex items-center space-x-6 text-sm text-gray-400">
             <div className="flex items-center space-x-1">
               <ImageIcon className="w-4 h-4" />
@@ -188,6 +190,53 @@ export default function Gallery({ userRole }: GalleryProps) {
             <div className="flex items-center space-x-1">
               <Eye className="w-4 h-4" />
               <span>{items.length} Total Items</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              {isSupabaseEnabled ? (
+                <>
+                  <Wifi className="w-4 h-4 text-green-400" />
+                  <span className="text-green-400">Shared Storage</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-4 h-4 text-yellow-400" />
+                  <span className="text-yellow-400">Local Only</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Storage Notice */}
+          <div className={`mt-4 p-3 rounded-lg ${
+            isSupabaseEnabled 
+              ? 'bg-green-950/30 border border-green-500/30' 
+              : 'bg-yellow-950/30 border border-yellow-500/30'
+          }`}>
+            <div className="flex items-start space-x-2">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center mt-0.5 flex-shrink-0 ${
+                isSupabaseEnabled ? 'bg-green-500' : 'bg-yellow-500'
+              }`}>
+                {isSupabaseEnabled ? (
+                  <Wifi className="w-3 h-3 text-white" />
+                ) : (
+                  <WifiOff className="w-3 h-3 text-white" />
+                )}
+              </div>
+              <div className={`text-sm ${
+                isSupabaseEnabled ? 'text-green-200' : 'text-yellow-200'
+              }`}>
+                {isSupabaseEnabled ? (
+                  <>
+                    <span className="font-medium">Shared Storage Active:</span> All users can see and access the same gallery items. 
+                    Changes are synchronized in real-time.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium">Local Storage Only:</span> Gallery items are stored locally in your browser. 
+                    Each user will only see items they've added. Consider setting up Supabase for shared storage.
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
