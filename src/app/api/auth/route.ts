@@ -212,6 +212,18 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // PRIORITY 2.5: Check hardcoded admin and viewer users (for Vercel deployment)
+    if (!userRole) {
+      // Hardcoded admin user: admin@d@rps
+      if (password === 'admin@d@rps') {
+        userRole = 'admin'
+      }
+      // Hardcoded viewer user: visitor@1424
+      else if (password === 'visitor@1424') {
+        userRole = 'viewer'
+      }
+    }
+    
     // PRIORITY 3: Check custom users created via /api/users (passcode authentication)
     if (!userRole) {
       const customUsers = readCustomUsers()

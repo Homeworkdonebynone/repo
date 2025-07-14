@@ -53,6 +53,12 @@ function verifyJWT(token: string): any {
 // Read custom users from file
 function readCustomUsers(): CustomUser[] {
   try {
+    // Check if we're in a serverless environment (like Vercel)
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      console.warn('User management is not available in serverless environments')
+      return []
+    }
+    
     const filePath = path.join(process.cwd(), '.custom-users.json')
     if (fs.existsSync(filePath)) {
       const data = fs.readFileSync(filePath, 'utf8')
@@ -67,6 +73,12 @@ function readCustomUsers(): CustomUser[] {
 // Write custom users to file
 function writeCustomUsers(users: CustomUser[]): boolean {
   try {
+    // Check if we're in a serverless environment (like Vercel)
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      console.warn('User management is not available in serverless environments')
+      return false
+    }
+    
     const filePath = path.join(process.cwd(), '.custom-users.json')
     fs.writeFileSync(filePath, JSON.stringify(users, null, 2))
     return true
