@@ -1,0 +1,9 @@
+# Vercel ignore file
+.env.local
+.custom-users.json
+node_modules
+.git
+README.md
+scripts/
+test-*.html
+ROLE_TESTING.md

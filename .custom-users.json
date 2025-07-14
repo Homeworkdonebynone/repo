@@ -1,0 +1,22 @@
+[
+  {
+    "id": "7bef0eb5-40f6-42e3-aa79-59f85a1df9d9",
+    "passcode": "admin@d@rps",
+    "passwordHash": "7b7ad0bc96c33fe02a129516f9cd8f458ee457152437ec31270be7d040ec8002:90ce687bd6f63cc71461aab350c5b4447ecafcb6b3fdfe87b1252c4451d79a274c5f6f1790d8be29779a278f8815215ea733119d0aafe2fff10038c5c2a42397",
+    "role": "admin",
+    "active": true,
+    "createdAt": "2025-07-14T06:45:09.026Z",
+    "lastUsed": "2025-07-14T06:48:11.590Z",
+    "usageCount": 2
+  },
+  {
+    "id": "5cd1380f-9e10-4083-910c-c51b632ee687",
+    "passcode": "visitor@1424",
+    "passwordHash": "8e509795d22b7842ce8ff60de9583137e2b1a0e20466425dcdb26f5bf8a979e8:fcb873b52b04b4997a9ff02cd559fd61c856654550e690ff10446e9dbc82c94aebecdfb4b0b5df681718ee74b07163e0d1f4d6feefbee5e9debf8894dba210a9",
+    "role": "viewer",
+    "active": true,
+    "createdAt": "2025-07-14T06:46:14.603Z",
+    "lastUsed": null,
+    "usageCount": 0
+  }
+]

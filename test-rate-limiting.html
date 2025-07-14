@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate Limiting Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: white; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .test-section { background: #2a2a2a; padding: 20px; margin: 20px 0; border-radius: 8px; }
+        button { background: #5a5a5a; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #6a6a6a; }
+        .result { background: #333; padding: 10px; margin: 10px 0; border-radius: 4px; font-family: monospace; }
+        .error { background: #4a1a1a; border-left: 4px solid #ff4444; }
+        .success { background: #1a4a1a; border-left: 4px solid #44ff44; }
+        .warning { background: #4a4a1a; border-left: 4px solid #ffff44; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 IP-Based Rate Limiting Test</h1>
+        
+        <div class="test-section">
+            <h2>Current IP Information</h2>
+            <button onclick="getIPInfo()">Get My IP</button>
+            <div id="ip-info" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>Rate Limit Test</h2>
+            <p>This will test the rate limiting by making multiple failed login attempts.</p>
+            <button onclick="testRateLimit()">Test Rate Limiting (5 failed attempts)</button>
+            <button onclick="checkRateLimitStatus()">Check Current Rate Limit Status</button>
+            <button onclick="clearLocalRateLimits()">Clear Local Rate Limits</button>
+            <div id="rate-limit-results" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>IP Storage Test</h2>
+            <button onclick="viewStoredIPs()">View Stored IP Data</button>
+            <div id="ip-storage" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        // Copy the same functions from your app
+        const getUserIdentifier = async () => {
+            try {
+                const response = await fetch('https://api.ipify.org?format=json')
+                const data = await response.json()
+                return data.ip
+            } catch (error) {
+                const canvas = document.createElement('canvas')
+                const ctx = canvas.getContext('2d')
+                if (ctx) {
+                    ctx.textBaseline = 'top'
+                    ctx.font = '14px Arial'
+                    ctx.fillText('Browser fingerprint', 2, 2)
+                    const fingerprint = canvas.toDataURL()
+                    return btoa(fingerprint + navigator.userAgent + screen.width + screen.height).substring(0, 12)
+                }
+                return btoa(navigator.userAgent + screen.width + screen.height + Date.now().toString()).substring(0, 12)
+            }
+        }
+
+        const getRateLimitData = async () => {
+            const userIP = await getUserIdentifier()
+            const allData = JSON.parse(localStorage.getItem('dorps-rate-limit-ips') || '{}')
+            
+            if (!allData[userIP]) {
+                return { attempts: 0, lastAttempt: 0, lockoutUntil: 0, userIP }
+            }
+            
+            return { ...allData[userIP], userIP }
+        }
+
+        const updateRateLimitData = async (attempts, lockoutUntil = 0) => {
+            const userIP = await getUserIdentifier()
+            const allData = JSON.parse(localStorage.getItem('dorps-rate-limit-ips') || '{}')
+            
+            allData[userIP] = {
+                attempts,
+                lastAttempt: Date.now(),
+                lockoutUntil,
+                timestamp: new Date().toISOString()
+            }
+            
+            const now = Date.now()
+            Object.keys(allData).forEach(ip => {
+                if (now - allData[ip].lastAttempt > 24 * 60 * 60 * 1000) {
+                    delete allData[ip]
+                }
+            })
+            
+            localStorage.setItem('dorps-rate-limit-ips', JSON.stringify(allData))
+        }
+
+        const isRateLimited = async () => {
+            const { attempts, lastAttempt, lockoutUntil, userIP } = await getRateLimitData()
+            const now = Date.now()
+            
+            if (lockoutUntil > now) {
+                return { limited: true, remainingTime: Math.ceil((lockoutUntil - now) / 1000), userIP }
+            }
+            
+            if (lockoutUntil > 0 && lockoutUntil <= now) {
+                await updateRateLimitData(0)
+                return { limited: false, remainingTime: 0, userIP }
+            }
+            
+            if (now - lastAttempt > 15 * 60 * 1000) {
+                await updateRateLimitData(0)
+                return { limited: false, remainingTime: 0, userIP }
+            }
+            
+            if (attempts >= 5) {
+                const lockoutTime = now + (attempts - 4) * 60 * 1000
+                await updateRateLimitData(attempts, lockoutTime)
+                return { limited: true, remainingTime: Math.ceil((lockoutTime - now) / 1000), userIP }
+            }
+            
+            return { limited: false, remainingTime: 0, userIP }
+        }
+
+        async function getIPInfo() {
+            const ip = await getUserIdentifier()
+            document.getElementById('ip-info').innerHTML = `
+                <div class="success">
+                    <strong>Your IP/Identifier:</strong> ${ip}<br>
+                    <strong>User Agent:</strong> ${navigator.userAgent}<br>
+                    <strong>Screen:</strong> ${screen.width}x${screen.height}
+                </div>
+            `
+        }
+
+        async function testRateLimit() {
+            const results = document.getElementById('rate-limit-results')
+            results.innerHTML = '<div class="warning">Testing rate limiting...</div>'
+            
+            let html = ''
+            
+            for (let i = 1; i <= 6; i++) {
+                const { attempts } = await getRateLimitData()
+                await updateRateLimitData(attempts + 1)
+                
+                const status = await isRateLimited()
+                
+                html += `
+                    <div class="${status.limited ? 'error' : 'warning'}">
+                        <strong>Attempt ${i}:</strong> IP ${status.userIP} - 
+                        ${status.limited ? `LOCKED (${status.remainingTime}s remaining)` : `${attempts + 1} failed attempts`}
+                    </div>
+                `
+                
+                if (status.limited && i === 5) {
+                    html += `
+                        <div class="error">
+                            <strong>Rate limit triggered!</strong> IP ${status.userIP} is now locked out for ${status.remainingTime} seconds.
+                        </div>
+                    `
+                    break
+                }
+            }
+            
+            results.innerHTML = html
+        }
+
+        async function checkRateLimitStatus() {
+            const status = await isRateLimited()
+            const data = await getRateLimitData()
+            
+            document.getElementById('rate-limit-results').innerHTML = `
+                <div class="${status.limited ? 'error' : 'success'}">
+                    <strong>Current Status:</strong> ${status.limited ? 'LOCKED' : 'NOT LOCKED'}<br>
+                    <strong>IP:</strong> ${status.userIP}<br>
+                    <strong>Failed Attempts:</strong> ${data.attempts}<br>
+                    <strong>Remaining Time:</strong> ${status.remainingTime}s<br>
+                    <strong>Last Attempt:</strong> ${data.lastAttempt ? new Date(data.lastAttempt).toLocaleString() : 'Never'}
+                </div>
+            `
+        }
+
+        function clearLocalRateLimits() {
+            localStorage.removeItem('dorps-rate-limit-ips')
+            localStorage.removeItem('dorps-rate-limit')
+            document.getElementById('rate-limit-results').innerHTML = `
+                <div class="success">
+                    <strong>Cleared!</strong> All rate limit data has been removed from localStorage.
+                </div>
+            `
+        }
+
+        function viewStoredIPs() {
+            const ipData = JSON.parse(localStorage.getItem('dorps-rate-limit-ips') || '{}')
+            
+            let html = '<strong>Stored IP Rate Limit Data:</strong><br><br>'
+            
+            if (Object.keys(ipData).length === 0) {
+                html += '<div class="success">No rate limit data stored.</div>'
+            } else {
+                Object.entries(ipData).forEach(([ip, data]) => {
+                    const now = Date.now()
+                    const isLocked = data.lockoutUntil > now
+                    
+                    html += `
+                        <div class="${isLocked ? 'error' : 'warning'}">
+                            <strong>IP:</strong> ${ip}<br>
+                            <strong>Attempts:</strong> ${data.attempts}<br>
+                            <strong>Status:</strong> ${isLocked ? `LOCKED (${Math.ceil((data.lockoutUntil - now) / 1000)}s)` : 'Not locked'}<br>
+                            <strong>Last Attempt:</strong> ${new Date(data.lastAttempt).toLocaleString()}<br>
+                        </div><br>
+                    `
+                })
+            }
+            
+            document.getElementById('ip-storage').innerHTML = html
+        }
+    </script>
+</body>
+</html>
