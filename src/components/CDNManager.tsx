@@ -81,39 +81,121 @@ export default function CDNManager({ isOpen, onClose }: CDNManagerProps) {
 
     setIsLoading(true)
     setUploadProgress(0)
-    setUploadStatus('Uploading directly to GitHub...')
+    setUploadStatus('Preparing upload...')
 
     try {
-      // Upload using direct endpoint with file stream
-      const response = await fetch('/api/upload-direct', {
-        method: 'POST',
-        headers: {
-          'Content-Type': selectedFile.type,
-          'Content-Length': selectedFile.size.toString(),
-          'X-Filename': `${Date.now()}.${selectedFile.name.split('.').pop()}`,
-          'X-Original-Name': selectedFile.name
-        },
-        body: selectedFile
-      })
+      const CHUNK_SIZE = 4 * 1024 * 1024 // 4MB chunks
+      const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE)
+      
+      if (selectedFile.size <= CHUNK_SIZE) {
+        // Small file - use regular upload
+        setUploadStatus('Uploading...')
+        const formData = new FormData()
+        formData.append('file', selectedFile)
 
-      const data = await response.json()
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        })
 
-      if (response.ok) {
-        setUploadStatus('Upload completed successfully!')
-        setSelectedFile(null)
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''
+        const data = await response.json()
+        if (response.ok) {
+          setUploadStatus('Upload completed!')
+          setSelectedFile(null)
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
+          await fetchFiles()
+        } else {
+          setUploadStatus(`Error: ${data.error}`)
         }
-        await fetchFiles()
       } else {
-        setUploadStatus(`Error: ${data.error}`)
+        // Large file - use chunked upload
+        setUploadStatus(`Uploading in ${totalChunks} chunks...`)
+        
+        // Initialize upload
+        const initResponse = await fetch('/api/upload-chunked', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'init',
+            fileName: selectedFile.name,
+            fileSize: selectedFile.size,
+            mimeType: selectedFile.type,
+            totalChunks
+          })
+        })
+        
+        const initData = await initResponse.json()
+        if (!initResponse.ok) {
+          throw new Error(initData.error)
+        }
+        
+        const uploadId = initData.uploadId
+        
+        // Upload chunks
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE
+          const end = Math.min(start + CHUNK_SIZE, selectedFile.size)
+          const chunk = selectedFile.slice(start, end)
+          
+          setUploadStatus(`Uploading chunk ${i + 1}/${totalChunks}...`)
+          setUploadProgress((i / totalChunks) * 90)
+          
+          const chunkFormData = new FormData()
+          chunkFormData.append('chunk', chunk)
+          chunkFormData.append('uploadId', uploadId)
+          chunkFormData.append('chunkIndex', i.toString())
+          
+          const chunkResponse = await fetch('/api/upload-chunked', {
+            method: 'POST',
+            body: chunkFormData
+          })
+          
+          if (!chunkResponse.ok) {
+            throw new Error('Chunk upload failed')
+          }
+        }
+        
+        // Complete upload
+        setUploadStatus('Finalizing upload...')
+        setUploadProgress(95)
+        
+        const completeResponse = await fetch('/api/upload-chunked', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'complete',
+            uploadId,
+            originalName: selectedFile.name,
+            mimeType: selectedFile.type,
+            totalSize: selectedFile.size
+          })
+        })
+        
+        const completeData = await completeResponse.json()
+        if (completeResponse.ok) {
+          setUploadStatus('Large file uploaded successfully!')
+          setSelectedFile(null)
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+          }
+          await fetchFiles()
+        } else {
+          throw new Error(completeData.error)
+        }
       }
     } catch (error) {
       console.error('Upload error:', error)
-      setUploadStatus('Upload failed')
+      setUploadStatus(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)
-      setUploadProgress(0)
+      setTimeout(() => {
+        setUploadProgress(0)
+        if (!uploadStatus.includes('successfully')) {
+          setUploadStatus('')
+        }
+      }, 3000)
     }
   }
 
@@ -229,7 +311,7 @@ export default function CDNManager({ isOpen, onClose }: CDNManagerProps) {
                   browse
                 </button>
               </p>
-              <p className="text-xs text-gray-500">Direct upload to GitHub • Up to 2GB • Auto-expires in 14 days</p>
+              <p className="text-xs text-gray-500">Up to 2GB via chunked upload • Auto-expires in 14 days</p>
               
               <input
                 ref={fileInputRef}
