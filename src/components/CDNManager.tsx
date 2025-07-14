@@ -79,42 +79,117 @@ export default function CDNManager({ isOpen, onClose }: CDNManagerProps) {
   const uploadFile = async () => {
     if (!selectedFile) return
 
-    const maxSize = 500 * 1024 * 1024 // 500MB
-    if (selectedFile.size > maxSize) {
-      setUploadStatus('Error: File too large (max 500MB)')
-      return
-    }
-
+    // No size limit since we're bypassing Vercel
     setIsLoading(true)
     setUploadProgress(0)
-    setUploadStatus('Uploading...')
+    setUploadStatus('Uploading directly to GitHub...')
 
     try {
-      const formData = new FormData()
-      formData.append('file', selectedFile)
+      // Get environment variables for direct GitHub upload
+      const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN
+      const githubOwner = process.env.NEXT_PUBLIC_GITHUB_OWNER
+      const githubRepo = process.env.NEXT_PUBLIC_GITHUB_REPO
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        setUploadStatus(data.message)
-        setSelectedFile(null)
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''
-        }
-        await fetchFiles()
-      } else {
-        setUploadStatus(`Error: ${data.error}`)
+      if (!githubToken || !githubOwner || !githubRepo) {
+        setUploadStatus('Error: GitHub configuration missing')
+        return
       }
+
+      // Import Octokit dynamically
+      const { Octokit } = await import('@octokit/rest')
+      const octokit = new Octokit({ auth: githubToken })
+
+      setUploadStatus('Preparing file...')
+      
+      // Generate unique filename
+      const fileId = Date.now().toString()
+      const ext = selectedFile.name.split('.').pop() || ''
+      const fileName = `${fileId}.${ext}`
+      
+      // Convert file to buffer
+      const arrayBuffer = await selectedFile.arrayBuffer()
+      const fileBuffer = new Uint8Array(arrayBuffer)
+      
+      setUploadStatus('Uploading to GitHub...')
+      setUploadProgress(30)
+      
+      // Get or create release
+      const releaseTag = 'cdn-files'
+      let release
+      
+      try {
+        release = await octokit.rest.repos.getReleaseByTag({
+          owner: githubOwner,
+          repo: githubRepo,
+          tag: releaseTag
+        })
+      } catch (error) {
+        setUploadStatus('Creating GitHub release...')
+        release = await octokit.rest.repos.createRelease({
+          owner: githubOwner,
+          repo: githubRepo,
+          tag_name: releaseTag,
+          name: 'CDN Files',
+          body: 'Direct uploaded files for CDN'
+        })
+      }
+      
+      setUploadProgress(60)
+      setUploadStatus('Uploading file asset...')
+      
+      // Upload file as release asset
+      const asset = await octokit.rest.repos.uploadReleaseAsset({
+        owner: githubOwner,
+        repo: githubRepo,
+        release_id: release.data.id,
+        name: fileName,
+        data: fileBuffer as any
+      })
+      
+      setUploadProgress(80)
+      setUploadStatus('Saving metadata...')
+      
+      // Save metadata to Supabase
+      if (supabaseUrl && supabaseKey) {
+        const { createClient } = await import('@supabase/supabase-js')
+        const supabase = createClient(supabaseUrl, supabaseKey)
+        
+        const now = new Date()
+        const expiryDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000) // 14 days
+        
+        await supabase
+          .from('cdn_files')
+          .insert([{
+            id: fileId,
+            originalName: selectedFile.name,
+            fileName: fileName,
+            size: selectedFile.size,
+            mimeType: selectedFile.type,
+            uploadDate: now.toISOString(),
+            expiryDate: expiryDate.toISOString(),
+            githubUrl: asset.data.browser_download_url
+          }])
+      }
+      
+      setUploadProgress(100)
+      setUploadStatus('Upload completed successfully!')
+      setSelectedFile(null)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      await fetchFiles()
+      
     } catch (error) {
-      setUploadStatus('Upload failed')
+      console.error('Direct upload error:', error)
+      setUploadStatus(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)
-      setUploadProgress(0)
+      setTimeout(() => {
+        setUploadProgress(0)
+        setUploadStatus('')
+      }, 3000)
     }
   }
 
@@ -230,7 +305,7 @@ export default function CDNManager({ isOpen, onClose }: CDNManagerProps) {
                   browse
                 </button>
               </p>
-              <p className="text-xs text-gray-500">Max 500MB • Auto-expires in 14 days</p>
+              <p className="text-xs text-gray-500">Direct GitHub upload • No size limit • Auto-expires in 14 days</p>
               
               <input
                 ref={fileInputRef}

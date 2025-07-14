@@ -10,8 +10,6 @@ CREATE TABLE IF NOT EXISTS cdn_files (
   "uploadDate" TIMESTAMP WITH TIME ZONE NOT NULL,
   "expiryDate" TIMESTAMP WITH TIME ZONE NOT NULL,
   "githubUrl" TEXT NOT NULL,
-  compressed BOOLEAN DEFAULT false,
-  "compressionRatio" INTEGER,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

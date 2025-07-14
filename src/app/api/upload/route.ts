@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Octokit } from '@octokit/rest'
-import sharp from 'sharp'
-import ffmpeg from 'fluent-ffmpeg'
-import ffmpegStatic from 'ffmpeg-static'
 import { createClient } from '@supabase/supabase-js'
 
-// Set ffmpeg path
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic)
-}
-
-const MAX_FILE_SIZE = 500 * 1024 * 1024 // 500MB
+const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4MB (Vercel Hobby plan limit is 4.5MB, leave some buffer)
+const GITHUB_MAX_ASSET_SIZE = 2 * 1024 * 1024 * 1024 // 2GB (GitHub's actual limit)
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN
 const GITHUB_OWNER = process.env.GITHUB_OWNER
 const GITHUB_REPO = process.env.GITHUB_REPO
@@ -29,8 +22,6 @@ interface UploadedFile {
   uploadDate: string
   expiryDate: string
   githubUrl: string
-  compressed?: boolean
-  compressionRatio?: number
 }
 
 // GitHub client - REQUIRED for CDN functionality
@@ -120,51 +111,6 @@ async function cleanupExpiredFiles() {
   }
 }
 
-// Compress video using FFmpeg (disabled for now due to serverless complexity)
-async function compressVideo(inputBuffer: Buffer, fileName: string): Promise<{ success: boolean; outputBuffer?: Buffer; originalSize: number; compressedSize: number }> {
-  // Video compression is disabled for now due to complexity in serverless environments
-  // FFmpeg in-memory processing is challenging and may cause timeouts
-  console.log('Video compression is disabled - uploading original file')
-  return {
-    success: false,
-    originalSize: inputBuffer.length,
-    compressedSize: 0
-  }
-}
-
-// Compress image using Sharp
-async function compressImage(inputBuffer: Buffer, mimeType: string): Promise<{ success: boolean; outputBuffer?: Buffer; originalSize: number; compressedSize: number }> {
-  try {
-    const originalSize = inputBuffer.length
-    let outputBuffer: Buffer
-    
-    if (mimeType.includes('png')) {
-      outputBuffer = await sharp(inputBuffer)
-        .png({ quality: 80, compressionLevel: 9 })
-        .toBuffer()
-    } else if (mimeType.includes('webp')) {
-      outputBuffer = await sharp(inputBuffer)
-        .webp({ quality: 80 })
-        .toBuffer()
-    } else {
-      // Default to JPEG
-      outputBuffer = await sharp(inputBuffer)
-        .jpeg({ quality: 80, progressive: true })
-        .toBuffer()
-    }
-    
-    return {
-      success: true,
-      outputBuffer,
-      originalSize,
-      compressedSize: outputBuffer.length
-    }
-  } catch (error) {
-    console.error('Image compression error:', error)
-    return { success: false, originalSize: inputBuffer.length, compressedSize: 0 }
-  }
-}
-
 // Upload file to GitHub Releases
 async function uploadToGitHub(fileBuffer: Buffer, fileName: string): Promise<string> {
   if (!octokit || !GITHUB_OWNER || !GITHUB_REPO) {
@@ -228,44 +174,24 @@ export async function POST(request: NextRequest) {
     }
     
     if (file.size > MAX_FILE_SIZE) {
+      const maxSizeMB = MAX_FILE_SIZE / (1024 * 1024)
       return NextResponse.json({ 
-        error: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB` 
-      }, { status: 400 })
+        error: `File too large. Maximum size is ${maxSizeMB}MB on Vercel Hobby plan.`,
+        details: `Vercel Hobby plan has a 4.5MB request limit. Upgrade to Pro for 100MB support, or use external file hosting for larger files.`
+      }, { status: 413 })
     }
+    
+    // Get file buffer
+    const bytes = await file.arrayBuffer()
+    const fileBuffer = Buffer.from(bytes)
     
     // Generate unique filename
     const fileId = Date.now().toString()
     const ext = file.name.split('.').pop() || ''
     const fileName = `${fileId}.${ext}`
     
-    // Get file buffer
-    const bytes = await file.arrayBuffer()
-    let fileBuffer = Buffer.from(bytes)
-    
-    // Determine if compression is needed
-    const isVideo = file.type.startsWith('video/')
-    const isImage = file.type.startsWith('image/')
-    let compressed = false
-    let compressionRatio = 0
-    let finalFileName = fileName
-    
-    if (isVideo && file.size > 50 * 1024 * 1024) { // Try to compress videos larger than 50MB
-      console.log('Video compression requested but currently disabled for serverless compatibility')
-      // Video compression is temporarily disabled due to serverless environment complexity
-      // The file will be uploaded as-is
-    } else if (isImage && file.size > 1024 * 1024) { // Compress images larger than 1MB
-      console.log('Compressing image...')
-      const result = await compressImage(fileBuffer, file.type)
-      if (result.success && result.outputBuffer && result.compressedSize < result.originalSize) {
-        compressed = true
-        compressionRatio = ((result.originalSize - result.compressedSize) / result.originalSize) * 100
-        fileBuffer = result.outputBuffer
-        finalFileName = `${fileId}_compressed.${ext}`
-      }
-    }
-    
     // Upload to GitHub Releases
-    const githubUrl = await uploadToGitHub(fileBuffer, finalFileName)
+    const githubUrl = await uploadToGitHub(fileBuffer, fileName)
     
     // Create file record
     const now = new Date()
@@ -274,14 +200,12 @@ export async function POST(request: NextRequest) {
     const fileRecord: UploadedFile = {
       id: fileId,
       originalName: file.name,
-      fileName: finalFileName,
+      fileName: fileName,
       size: fileBuffer.length,
       mimeType: file.type,
       uploadDate: now.toISOString(),
       expiryDate: expiryDate.toISOString(),
-      githubUrl,
-      compressed,
-      compressionRatio: compressed ? Math.round(compressionRatio) : undefined
+      githubUrl
     }
     
     // Save to registry
@@ -290,7 +214,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       file: fileRecord,
-      message: compressed ? `File uploaded and compressed by ${Math.round(compressionRatio)}%` : 'File uploaded successfully'
+      message: 'File uploaded successfully'
     })
     
   } catch (error) {
