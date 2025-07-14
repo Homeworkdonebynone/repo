@@ -38,6 +38,16 @@ export function useWikiPages() {
   // Load pages on mount
   useEffect(() => {
     loadPages()
+    
+    // Set up periodic refresh for Supabase-enabled instances
+    // This ensures users see changes made by others
+    if (isSupabaseEnabled) {
+      const refreshInterval = setInterval(() => {
+        loadPages()
+      }, 30000) // Refresh every 30 seconds
+      
+      return () => clearInterval(refreshInterval)
+    }
   }, [])
 
   const loadPages = async () => {
@@ -160,15 +170,24 @@ export function useWikiPages() {
 
   const deletePage = async (pageId: string) => {
     try {
+      // Remove from Supabase first if enabled
+      if (isSupabaseEnabled) {
+        const supabaseSuccess = await wikiPages.delete(pageId)
+        if (!supabaseSuccess) {
+          console.error('Failed to delete page from Supabase')
+          return false
+        }
+      }
+
+      // Remove from local state and localStorage
       const updatedPages = pages.filter(p => p.id !== pageId)
-      
-      // Remove from localStorage
       setPages(updatedPages)
       localStorage.setItem('dorps-wiki-pages', JSON.stringify(updatedPages))
 
-      // Remove from Supabase if enabled
+      // If Supabase is enabled, refresh data to ensure synchronization
       if (isSupabaseEnabled) {
-        await wikiPages.delete(pageId)
+        // Small delay to ensure Supabase has processed the delete
+        setTimeout(() => loadPages(), 500)
       }
 
       return true

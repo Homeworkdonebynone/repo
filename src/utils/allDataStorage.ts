@@ -73,6 +73,15 @@ export function useWikiPages() {
   // Load pages on mount
   useEffect(() => {
     loadPages()
+    
+    // Set up periodic refresh for Supabase-enabled instances
+    if (isSupabaseEnabled) {
+      const refreshInterval = setInterval(() => {
+        loadPages()
+      }, 30000) // Refresh every 30 seconds
+      
+      return () => clearInterval(refreshInterval)
+    }
   }, [])
 
   const loadPages = async () => {
@@ -195,15 +204,24 @@ export function useWikiPages() {
 
   const deletePage = async (pageId: string) => {
     try {
+      // Remove from Supabase first if enabled
+      if (isSupabaseEnabled) {
+        const supabaseSuccess = await wikiPages.delete(pageId)
+        if (!supabaseSuccess) {
+          console.error('Failed to delete page from Supabase')
+          return false
+        }
+      }
+
+      // Remove from local state and localStorage
       const updatedPages = pages.filter(p => p.id !== pageId)
-      
-      // Remove from localStorage
       setPages(updatedPages)
       localStorage.setItem('dorps-wiki-pages', JSON.stringify(updatedPages))
 
-      // Remove from Supabase if enabled
+      // If Supabase is enabled, refresh data to ensure synchronization
       if (isSupabaseEnabled) {
-        await wikiPages.delete(pageId)
+        // Small delay to ensure Supabase has processed the delete
+        setTimeout(() => loadPages(), 500)
       }
 
       return true
@@ -231,6 +249,15 @@ export function useGalleryItems() {
 
   useEffect(() => {
     loadItems()
+    
+    // Set up periodic refresh for Supabase-enabled instances
+    if (isSupabaseEnabled) {
+      const refreshInterval = setInterval(() => {
+        loadItems()
+      }, 30000) // Refresh every 30 seconds
+      
+      return () => clearInterval(refreshInterval)
+    }
   }, [])
 
   const loadItems = async () => {
@@ -325,13 +352,23 @@ export function useGalleryItems() {
 
   const deleteItem = async (itemId: string) => {
     try {
+      // Remove from Supabase first if enabled
+      if (isSupabaseEnabled) {
+        const supabaseSuccess = await galleryItems.delete(itemId)
+        if (!supabaseSuccess) {
+          console.error('Failed to delete gallery item from Supabase')
+          return false
+        }
+      }
+
+      // Remove from local state and localStorage
       const updatedItems = items.filter(i => i.id !== itemId)
-      
       setItems(updatedItems)
       localStorage.setItem('dorps-gallery-items', JSON.stringify(updatedItems))
 
+      // If Supabase is enabled, refresh data to ensure synchronization
       if (isSupabaseEnabled) {
-        await galleryItems.delete(itemId)
+        setTimeout(() => loadItems(), 500)
       }
 
       return true
