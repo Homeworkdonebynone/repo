@@ -6,10 +6,5 @@
     "app/api/**/*.ts": {
       "runtime": "nodejs18.x"
     }
-  },
-  "env": {
-    "ADMIN_PASSWORD_HASH": "@admin_password_hash",
-    "VIEWER_PASSWORD_HASH": "@viewer_password_hash", 
-    "JWT_SECRET": "@jwt_secret"
   }
 }
