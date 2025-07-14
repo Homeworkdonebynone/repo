@@ -73,15 +73,6 @@ export function useWikiPages() {
   // Load pages on mount
   useEffect(() => {
     loadPages()
-    
-    // Set up periodic refresh for Supabase-enabled instances
-    if (isSupabaseEnabled) {
-      const refreshInterval = setInterval(() => {
-        loadPages()
-      }, 30000) // Refresh every 30 seconds
-      
-      return () => clearInterval(refreshInterval)
-    }
   }, [])
 
   const loadPages = async () => {
@@ -249,15 +240,6 @@ export function useGalleryItems() {
 
   useEffect(() => {
     loadItems()
-    
-    // Set up periodic refresh for Supabase-enabled instances
-    if (isSupabaseEnabled) {
-      const refreshInterval = setInterval(() => {
-        loadItems()
-      }, 30000) // Refresh every 30 seconds
-      
-      return () => clearInterval(refreshInterval)
-    }
   }, [])
 
   const loadItems = async () => {
