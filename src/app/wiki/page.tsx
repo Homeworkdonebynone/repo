@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { PlusCircle, Search, FileText, Settings, Home, LogOut, Tag, Shield, Eye, Plus, X, Menu, Image as ImageIcon, Wifi, WifiOff } from 'lucide-react'
+import { PlusCircle, Search, FileText, Settings, Home, LogOut, Tag, Shield, Eye, Plus, X, Menu, Image as ImageIcon, Wifi, WifiOff, HardDrive } from 'lucide-react'
 import { League_Spartan } from 'next/font/google'
 import WikiEditor from '@/components/WikiEditor'
 import WikiViewer from '@/components/WikiViewer'
 import Gallery from '@/components/Gallery'
+import CDNManager from '@/components/CDNManager'
 import { logActivity, isPageInvincible } from '@/utils/activityLogger'
 import { useWikiPages, useCategories } from '@/utils/hybridStorage'
 
@@ -47,6 +48,7 @@ export default function WikiPage() {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [currentView, setCurrentView] = useState<'wiki' | 'gallery'>('wiki')
+  const [showCDNManager, setShowCDNManager] = useState(false)
   const router = useRouter()
 
   // Simple hash function for basic obfuscation
@@ -468,6 +470,16 @@ Click the "➕ New Page" button to create your first page!
                     </button>
                   )}
 
+                  {/* CDN Manager Button */}
+                  <button
+                    onClick={() => setShowCDNManager(true)}
+                    className="flex items-center space-x-1 md:space-x-2 px-2 md:px-3 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-orange-500/25 text-sm"
+                  >
+                    <HardDrive className="w-4 h-4" />
+                    <span className="hidden sm:inline">CDN</span>
+                    <span className="sm:hidden">CDN</span>
+                  </button>
+
                   {/* Gallery/Wiki toggle */}
                   <button
                     onClick={() => setCurrentView(currentView === 'wiki' ? 'gallery' : 'wiki')}
@@ -507,28 +519,40 @@ Click the "➕ New Page" button to create your first page!
 
               {/* Gallery/Wiki toggle for viewers */}
               {userRole === 'viewer' && (
-                <button
-                  onClick={() => setCurrentView(currentView === 'wiki' ? 'gallery' : 'wiki')}
-                  className={`flex items-center space-x-1 md:space-x-2 px-2 md:px-3 py-2 rounded-lg transition-all duration-300 hover:scale-105 shadow-lg text-sm ${
-                    currentView === 'gallery'
-                      ? 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 hover:shadow-blue-500/25'
-                      : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 hover:shadow-indigo-500/25'
-                  } text-white`}
-                >
-                  {currentView === 'gallery' ? (
-                    <>
-                      <FileText className="w-4 h-4" />
-                      <span className="hidden sm:inline">Wiki</span>
-                      <span className="sm:hidden">Wiki</span>
-                    </>
-                  ) : (
-                    <>
-                      <ImageIcon className="w-4 h-4" />
-                      <span className="hidden sm:inline">Gallery</span>
-                      <span className="sm:hidden">Gallery</span>
-                    </>
-                  )}
-                </button>
+                <>
+                  <button
+                    onClick={() => setCurrentView(currentView === 'wiki' ? 'gallery' : 'wiki')}
+                    className={`flex items-center space-x-1 md:space-x-2 px-2 md:px-3 py-2 rounded-lg transition-all duration-300 hover:scale-105 shadow-lg text-sm ${
+                      currentView === 'gallery'
+                        ? 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 hover:shadow-blue-500/25'
+                        : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 hover:shadow-indigo-500/25'
+                    } text-white`}
+                  >
+                    {currentView === 'gallery' ? (
+                      <>
+                        <FileText className="w-4 h-4" />
+                        <span className="hidden sm:inline">Wiki</span>
+                        <span className="sm:hidden">Wiki</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-4 h-4" />
+                        <span className="hidden sm:inline">Gallery</span>
+                        <span className="sm:hidden">Gallery</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* CDN Manager Button for Viewers */}
+                  <button
+                    onClick={() => setShowCDNManager(true)}
+                    className="flex items-center space-x-1 md:space-x-2 px-2 md:px-3 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-orange-500/25 text-sm"
+                  >
+                    <HardDrive className="w-4 h-4" />
+                    <span className="hidden sm:inline">CDN</span>
+                    <span className="sm:hidden">CDN</span>
+                  </button>
+                </>
               )}
               
               <button
@@ -793,6 +817,12 @@ Click the "➕ New Page" button to create your first page!
           )}
         </main>
       </div>
+      
+      {/* CDN Manager Modal */}
+      <CDNManager 
+        isOpen={showCDNManager} 
+        onClose={() => setShowCDNManager(false)} 
+      />
     </div>
   )
 }

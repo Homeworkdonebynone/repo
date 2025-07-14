@@ -4,8 +4,14 @@ import { Inter } from 'next/font/google'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'dorps.me',
-  description: 'Coming Soon...',
+  title: 'Dorps Wiki',
+  description: 'Collaborative wiki platform for shared knowledge',
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/apple-icon.png',
+  },
+  manifest: '/manifest.json',
 }
 
 export default function RootLayout({

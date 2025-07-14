@@ -35,3 +35,6 @@ Thumbs.db
 # Temporary folders
 tmp/
 temp/
+
+# CDN uploads (contains user uploaded files)
+uploads/
