@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Octokit } from '@octokit/rest'
 import { createClient } from '@supabase/supabase-js'
 
-const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4MB (Vercel Hobby plan limit is 4.5MB, leave some buffer)
+const MAX_FILE_SIZE = 490 * 1024 * 1024 // 490MB (safe limit for chunked upload)
 const GITHUB_MAX_ASSET_SIZE = 2 * 1024 * 1024 * 1024 // 2GB (GitHub's actual limit)
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN
 const GITHUB_OWNER = process.env.GITHUB_OWNER
@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
     
     // Create file record
     const now = new Date()
-    const expiryDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000) // 14 days
+    const expiryDate = new Date('2099-12-31') // Never expires (far future date)
     
     const fileRecord: UploadedFile = {
       id: fileId,

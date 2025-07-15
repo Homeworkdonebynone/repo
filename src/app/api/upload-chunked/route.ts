@@ -7,6 +7,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 const CHUNK_SIZE = 3.5 * 1024 * 1024 // 3.5MB chunks (safe for 4.5MB limit)
+const MAX_FILE_SIZE = 490 * 1024 * 1024 // 490MB limit for chunked uploads
 
 // GitHub and Supabase config
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN
@@ -71,6 +72,12 @@ async function initializeUpload(body: any) {
   
   if (!fileName || !fileSize || !totalChunks) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+  
+  if (fileSize > MAX_FILE_SIZE) {
+    return NextResponse.json({ 
+      error: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB` 
+    }, { status: 413 })
   }
   
   const uploadId = Date.now().toString()
@@ -212,7 +219,7 @@ async function completeUpload(body: any) {
     // Save metadata to Supabase
     if (supabase) {
       const now = new Date()
-      const expiryDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000) // 14 days
+      const expiryDate = new Date('2099-12-31') // Never expires (far future date)
       
       await supabase
         .from('cdn_files')

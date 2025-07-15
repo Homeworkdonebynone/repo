@@ -5,14 +5,13 @@
 The Dorps Wiki now has a **complete GitHub Releases-based CDN system** with the following features:
 
 ### 🎯 Core Features
-- ✅ **500MB file upload limit**
+- ✅ **490MB file upload limit** (chunked upload for large files)
 - ✅ **GitHub Releases storage** (no local storage)
-- ✅ **Image compression** (20% reduction for files >1MB)
-- ⚠️ **Video compression** (temporarily disabled for serverless compatibility)
-- ✅ **Auto-deletion after 14 days** (from file registry)
-- ✅ **Custom video player** with Discord embeds
+- ✅ **Files never expire** (permanent storage)
 - ✅ **CDN Manager UI** with drag & drop
 - ✅ **Shareable links** and file management
+- ✅ **Custom video player** with Discord embeds
+- ✅ **Chunked upload** for files larger than 4MB
 
 ### 🔧 Files Created/Modified
 
