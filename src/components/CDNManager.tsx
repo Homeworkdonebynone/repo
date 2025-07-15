@@ -311,7 +311,7 @@ export default function CDNManager({ isOpen, onClose }: CDNManagerProps) {
                   browse
                 </button>
               </p>
-              <p className="text-xs text-gray-500">Up to 490MB via chunked upload • Files never expire</p>
+              <p className="text-xs text-gray-500">Up to 450MB via chunked upload • Files never expire</p>
               
               <input
                 ref={fileInputRef}

@@ -7,7 +7,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 const CHUNK_SIZE = 3.5 * 1024 * 1024 // 3.5MB chunks (safe for 4.5MB limit)
-const MAX_FILE_SIZE = 490 * 1024 * 1024 // 490MB limit for chunked uploads
+const MAX_FILE_SIZE = 450 * 1024 * 1024 // 450MB limit for chunked uploads
 
 // GitHub and Supabase config
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN
