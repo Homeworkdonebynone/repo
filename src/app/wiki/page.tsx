@@ -284,12 +284,21 @@ export default function WikiPage() {
       }
       
       // Create new page with unique ID
+      const newPageId = generateUniqueId('page')
+      console.log('=== NEW PAGE CREATION ===')
+      console.log('Generated new page ID:', newPageId)
+      console.log('Page data:', pageData)
+      console.log('Current pages:', pages.map(p => ({ id: p.id, title: p.title })))
+      
       const newPage: WikiPage = {
-        id: generateUniqueId('page'),
+        id: newPageId,
         ...pageData,
         lastModified: new Date().toISOString(),
         createdBy: userRole || 'admin'
       }
+      
+      console.log('New page object:', newPage)
+      console.log('=== END NEW PAGE CREATION ===')
       
       // Save using supabase storage
       const savedPage = await savePage(newPage, true)

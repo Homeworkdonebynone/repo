@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, activityLogs, invinciblePages } from './supabase'
+import { isSupabaseConfigured, activityLogs } from './supabase'
 
 interface ActivityLog {
   id: string
@@ -132,7 +132,8 @@ export async function isPageInvincible(pageId: string): Promise<boolean> {
       return false
     }
     
-    const invinciblePagesData = await invinciblePages.getAll()
+    const { invinciblePagesStorage } = await import('./supabaseStorage')
+    const invinciblePagesData = await invinciblePagesStorage.getAll()
     return invinciblePagesData.some(page => page.page_id === pageId)
   } catch (error) {
     console.error('Failed to check page invincibility:', error)

@@ -3,6 +3,31 @@ import { isSupabaseConfigured, wikiPages, galleryItems, categories, rateLimits, 
 
 type UserRole = 'viewer' | 'admin' | 'super-admin'
 
+// Debug function to clear unwanted welcome pages
+export async function clearWelcomePage() {
+  if (!isSupabaseConfigured()) {
+    console.log('Supabase not configured')
+    return
+  }
+  
+  try {
+    console.log('Checking for welcome pages in database...')
+    const allPages = await wikiPages.getAll()
+    const welcomePages = allPages.filter(p => p.id === 'welcome' || p.id.includes('welcome'))
+    
+    console.log('Found welcome pages:', welcomePages)
+    
+    for (const page of welcomePages) {
+      console.log(`Deleting welcome page: ${page.id}`)
+      await wikiPages.delete(page.id)
+    }
+    
+    console.log('Welcome pages cleared')
+  } catch (error) {
+    console.error('Error clearing welcome pages:', error)
+  }
+}
+
 // Utility function to generate unique IDs
 function generateUniqueId(prefix: string = 'page'): string {
   // Use crypto.randomUUID() if available, otherwise fallback to timestamp + random
@@ -108,12 +133,42 @@ export function useWikiPages() {
     }
 
     try {
-      console.log(`Saving page: ${page.title} (ID: ${page.id}, isNew: ${isNew})`)
+      console.log(`=== SAVE PAGE DEBUG ===`)
+      console.log(`Saving page: ${page.title}`)
+      console.log(`Page ID: ${page.id}`)
+      console.log(`Is new: ${isNew}`)
+      console.log(`Current pages in state:`, pages.map(p => ({ id: p.id, title: p.title })))
+      
+      // Check if a page with this ID already exists
+      const existingPage = pages.find(p => p.id === page.id)
+      console.log(`Existing page with same ID:`, existingPage ? { id: existingPage.id, title: existingPage.title } : 'None')
+      
+      // CRITICAL: Check if there's a "welcome" page that shouldn't be there
+      const welcomePage = pages.find(p => p.id === 'welcome')
+      if (welcomePage) {
+        console.error('FOUND UNWANTED WELCOME PAGE:', welcomePage)
+        console.error('This should not exist! Deleting it...')
+        await wikiPages.delete('welcome')
+      }
       
       let success = false
       
       if (isNew) {
         console.log('Creating new page:', page)
+        
+        // Double-check the database doesn't have this ID
+        const allPagesFromDB = await wikiPages.getAll()
+        const existingInDB = allPagesFromDB.find(p => p.id === page.id)
+        console.log(`Page with ID ${page.id} exists in database:`, existingInDB ? 'YES' : 'NO')
+        
+        // CRITICAL: Check if there's a welcome page in the database
+        const welcomeInDB = allPagesFromDB.find(p => p.id === 'welcome')
+        if (welcomeInDB) {
+          console.error('FOUND WELCOME PAGE IN DATABASE:', welcomeInDB)
+          console.error('Deleting it from database...')
+          await wikiPages.delete('welcome')
+        }
+        
         const result = await wikiPages.create({
           id: page.id,
           title: page.title,
@@ -144,7 +199,9 @@ export function useWikiPages() {
         console.log('Adding new page to local state')
         setPages(prev => {
           console.log('Previous pages:', prev.length, 'Adding:', page.title)
-          return [page, ...prev]
+          const newPages = [page, ...prev]
+          console.log('New pages array:', newPages.map(p => ({ id: p.id, title: p.title })))
+          return newPages
         })
       } else {
         console.log('Updating existing page in local state')
@@ -152,6 +209,7 @@ export function useWikiPages() {
       }
 
       console.log('Page saved successfully:', page.title)
+      console.log(`=== END SAVE PAGE DEBUG ===`)
       return page
     } catch (error) {
       console.error('Error saving page:', error)
