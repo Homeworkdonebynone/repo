@@ -103,6 +103,9 @@ export const wikiPages = {
 
   async create(page: Omit<WikiPageDB, 'created_at' | 'updated_at'>): Promise<WikiPageDB | null> {
     if (!supabase) return null
+    
+    console.log('Creating page in database:', page)
+    
     const { data, error } = await supabase
       .from('wiki_pages')
       .insert([page])
@@ -111,8 +114,16 @@ export const wikiPages = {
     
     if (error) {
       console.error('Error creating wiki page:', error)
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      })
       return null
     }
+    
+    console.log('Page created successfully:', data)
     return data
   },
 

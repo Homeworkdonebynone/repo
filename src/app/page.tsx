@@ -72,7 +72,7 @@ export default function ComingSoonPage() {
   // Rate limiting functions with IP-based restrictions
   const getRateLimitData = async () => {
     const userIP = await getUserIdentifier()
-    const { rateLimitsStorage } = await import('../utils/allDataStorage')
+    const { rateLimitsStorage } = await import('../utils/supabaseStorage')
     const data = await rateLimitsStorage.get(userIP)
     
     if (!data) {
@@ -84,7 +84,7 @@ export default function ComingSoonPage() {
 
   const updateRateLimitData = async (attempts: number, lockoutUntil: number = 0) => {
     const userIP = await getUserIdentifier()
-    const { rateLimitsStorage } = await import('../utils/allDataStorage')
+    const { rateLimitsStorage } = await import('../utils/supabaseStorage')
     
     await rateLimitsStorage.update(userIP, attempts, lockoutUntil)
   }
@@ -266,7 +266,7 @@ export default function ComingSoonPage() {
         page: `${page} (${title})`
       }
 
-      const { visitorLogsStorage } = await import('../utils/allDataStorage')
+      const { visitorLogsStorage } = await import('../utils/supabaseStorage')
       await visitorLogsStorage.save(newLog)
     } catch (error) {
       console.error('Failed to log visit:', error)

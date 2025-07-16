@@ -9,7 +9,8 @@ import WikiViewer from '@/components/WikiViewer'
 import Gallery from '@/components/Gallery'
 import CDNManager from '@/components/CDNManager'
 import { logActivity, isPageInvincible } from '@/utils/activityLogger'
-import { useWikiPages, useCategories } from '@/utils/hybridStorage'
+import { useWikiPages, useCategories, generateUniqueId, isDuplicateTitle, debugDatabase } from '@/utils/supabaseStorage'
+import { isSupabaseConfigured } from '@/utils/supabase'
 
 const leagueSpartan = League_Spartan({
   subsets: ['latin'],
@@ -35,8 +36,8 @@ interface Category {
 }
 
 export default function WikiPage() {
-  const { pages, isLoading: pagesLoading, isSupabaseEnabled, savePage, deletePage } = useWikiPages()
-  const { categories, isLoading: categoriesLoading, saveCategory, deleteCategory } = useCategories()
+  const { pages, isLoading: pagesLoading, error: pagesError, savePage, deletePage, refreshPages } = useWikiPages()
+  const { categoryList: categories, isLoading: categoriesLoading, error: categoriesError, saveCategory, deleteCategory } = useCategories()
   const [currentPage, setCurrentPage] = useState<WikiPage | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -48,6 +49,7 @@ export default function WikiPage() {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [currentView, setCurrentView] = useState<'wiki' | 'gallery'>('wiki')
+  const [isSupabaseEnabled] = useState(isSupabaseConfigured())
   const [showCDNManager, setShowCDNManager] = useState(false)
   const router = useRouter()
 
@@ -88,7 +90,7 @@ export default function WikiPage() {
   // Rate limiting functions with IP-based restrictions
   const getRateLimitData = async () => {
     const userIP = await getUserIdentifier()
-    const { rateLimitsStorage } = await import('../../utils/allDataStorage')
+    const { rateLimitsStorage } = await import('../../utils/supabaseStorage')
     const data = await rateLimitsStorage.get(userIP)
     
     if (!data) {
@@ -100,7 +102,7 @@ export default function WikiPage() {
 
   const updateRateLimitData = async (attempts: number, lockoutUntil: number = 0) => {
     const userIP = await getUserIdentifier()
-    const { rateLimitsStorage } = await import('../../utils/allDataStorage')
+    const { rateLimitsStorage } = await import('../../utils/supabaseStorage')
     
     await rateLimitsStorage.update(userIP, attempts, lockoutUntil)
   }
@@ -220,7 +222,7 @@ export default function WikiPage() {
         page: `${page} (${title})`
       }
 
-      const { visitorLogsStorage } = await import('../../utils/allDataStorage')
+      const { visitorLogsStorage } = await import('../../utils/supabaseStorage')
       await visitorLogsStorage.save(newLog)
     } catch (error) {
       console.error('Failed to log visit:', error)
@@ -231,44 +233,12 @@ export default function WikiPage() {
   useEffect(() => {
     if (!userRole) return
     
-    // Set loading based on hybrid storage loading states
+    // Set loading based on supabase storage loading states
     setIsLoading(pagesLoading || categoriesLoading)
     
     // Set initial page when pages are loaded
     if (!pagesLoading && pages.length > 0 && !currentPage) {
       setCurrentPage(pages[0])
-    } else if (!pagesLoading && pages.length === 0 && (userRole === 'admin' || userRole === 'super-admin')) {
-      // Create welcome page if no pages exist
-      const welcomePage: WikiPage = {
-        id: 'welcome',
-        title: 'Welcome to The Dorps Wiki',
-        content: `# Welcome to The Dorps Wiki! 🎭
-
-This is your secret knowledge base. Here you can:
-
-- 📚 Create and edit wiki pages
-- 🏷️ Organize content with categories  
-- 🔍 Search through all content
-- 🎨 Customize with different themes
-
-## Getting Started
-
-${(userRole === 'admin' || userRole === 'super-admin') ? 
-  'As an **admin**, you can create, edit, and delete pages and categories.' : 
-  'As a **viewer**, you can read all content but cannot make changes.'
-}
-
-Click the "➕ New Page" button to create your first page!
-
----
-*Last updated: ${new Date().toLocaleDateString()}*`,
-        lastModified: new Date().toISOString(),
-        category: 'general',
-        createdBy: 'admin'
-      }
-      savePage(welcomePage, true).then((savedPage) => {
-        if (savedPage) setCurrentPage(savedPage)
-      })
     }
 
     // Log visit
@@ -299,7 +269,7 @@ Click the "➕ New Page" button to create your first page!
         lastModified: new Date().toISOString()
       }
       
-      // Save using hybrid storage
+      // Save using supabase storage
       const savedPage = await savePage(updatedPage, false)
       if (savedPage) {
         setCurrentPage(savedPage)
@@ -307,20 +277,30 @@ Click the "➕ New Page" button to create your first page!
         await logActivity('edit', currentPage.id, pageData.title, userRole)
       }
     } else {
-      // Create new page
+      // Check for duplicate title
+      if (isDuplicateTitle(pages, pageData.title)) {
+        alert('A page with this title already exists. Please choose a different title.')
+        return
+      }
+      
+      // Create new page with unique ID
       const newPage: WikiPage = {
-        id: Date.now().toString(),
+        id: generateUniqueId('page'),
         ...pageData,
         lastModified: new Date().toISOString(),
         createdBy: userRole || 'admin'
       }
       
-      // Save using hybrid storage
+      // Save using supabase storage
       const savedPage = await savePage(newPage, true)
       if (savedPage) {
         setCurrentPage(savedPage)
         // Log the creation activity
         await logActivity('create', newPage.id, pageData.title, userRole)
+        
+        // Debug database state
+        console.log('=== AFTER CREATING PAGE ===')
+        await debugDatabase()
       }
     }
     setIsEditing(false)
@@ -339,7 +319,7 @@ Click the "➕ New Page" button to create your first page!
     const pageToDelete = pages.find(p => p.id === pageId)
     const pageTitle = pageToDelete?.title || 'Unknown Page'
     
-    // Delete using hybrid storage
+    // Delete using supabase storage
     const success = await deletePage(pageId)
     if (success) {
       // Log the deletion activity
@@ -367,7 +347,7 @@ Click the "➕ New Page" button to create your first page!
       color: newCategoryColor
     }
 
-    // Save using hybrid storage
+    // Save using supabase storage
     const savedCategory = await saveCategory(newCategory)
     if (savedCategory) {
       setNewCategoryName('')
@@ -378,7 +358,7 @@ Click the "➕ New Page" button to create your first page!
   const handleDeleteCategory = async (categoryId: string) => {
     if (userRole !== 'admin' && userRole !== 'super-admin') return
 
-    // Delete using hybrid storage
+    // Delete using supabase storage
     const success = await deleteCategory(categoryId)
     if (success) {
       // Reset pages in deleted category to 'general' (this needs to be handled by updating each page)
@@ -514,6 +494,15 @@ Click the "➕ New Page" button to create your first page!
                       <span className="sm:hidden">New</span>
                     </button>
                   )}
+                  
+                  {/* Refresh button for admins */}
+                  <button
+                    onClick={refreshPages}
+                    className="flex items-center space-x-1 md:space-x-2 px-2 md:px-3 py-2 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all duration-300 hover:scale-105 shadow-lg text-sm"
+                  >
+                    <WifiOff className="w-4 h-4" />
+                    <span className="hidden sm:inline">Refresh</span>
+                  </button>
                 </>
               )} 
 
@@ -551,6 +540,15 @@ Click the "➕ New Page" button to create your first page!
                     <HardDrive className="w-4 h-4" />
                     <span className="hidden sm:inline">CDN</span>
                     <span className="sm:hidden">CDN</span>
+                  </button>
+                  
+                  {/* Refresh button for viewers */}
+                  <button
+                    onClick={refreshPages}
+                    className="flex items-center space-x-1 md:space-x-2 px-2 md:px-3 py-2 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all duration-300 hover:scale-105 shadow-lg text-sm"
+                  >
+                    <WifiOff className="w-4 h-4" />
+                    <span className="hidden sm:inline">Refresh</span>
                   </button>
                 </>
               )}
@@ -639,7 +637,7 @@ Click the "➕ New Page" button to create your first page!
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 >
                   <option value="all">All Categories</option>
-                  {categories.map(category => (
+                  {categories.map((category: Category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
                     </option>
@@ -681,7 +679,7 @@ Click the "➕ New Page" button to create your first page!
 
                   {/* Category List */}
                   <div className="space-y-1">
-                    {categories.map(category => (
+                    {categories.map((category: Category) => (
                       <div key={category.id} className="flex items-center justify-between py-1">
                         <div className="flex items-center space-x-2">
                           <div 
@@ -710,7 +708,7 @@ Click the "➕ New Page" button to create your first page!
                   Pages ({filteredPages.length})
                 </div>
                 {filteredPages.map(page => {
-                  const category = categories.find(c => c.id === page.category)
+                  const category = categories.find((c: Category) => c.id === page.category)
                   return (
                     <button
                       key={page.id}
@@ -801,15 +799,34 @@ Click the "➕ New Page" button to create your first page!
                       <FileText className="w-16 h-16 opacity-20" />
                     </div>
                   </div>
-                  <h2 className="text-xl font-medium mb-2 text-gray-300">No page selected</h2>
-                  <p className="mb-4 text-gray-400">Select a page from the sidebar or create a new one</p>
-                  {(userRole === 'admin' || userRole === 'super-admin') && (
-                    <button
-                      onClick={handleCreateNewPage}
-                      className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-purple-500/25"
-                    >
-                      Create New Page
-                    </button>
+                  {pages.length === 0 ? (
+                    <>
+                      <h2 className="text-xl font-medium mb-2 text-gray-300">Welcome to your wiki!</h2>
+                      <p className="mb-4 text-gray-400">You haven't created any pages yet. Get started by creating your first page!</p>
+                      {(userRole === 'admin' || userRole === 'super-admin') && (
+                        <button
+                          onClick={() => setIsEditing(true)}
+                          className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-purple-500/25"
+                        >
+                          <PlusCircle className="w-5 h-5" />
+                          <span>Create Your First Page</span>
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="text-xl font-medium mb-2 text-gray-300">No page selected</h2>
+                      <p className="mb-4 text-gray-400">Select a page from the sidebar or create a new one</p>
+                      {(userRole === 'admin' || userRole === 'super-admin') && (
+                        <button
+                          onClick={() => setIsEditing(true)}
+                          className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-purple-500/25"
+                        >
+                          <PlusCircle className="w-5 h-5" />
+                          <span>Create New Page</span>
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}

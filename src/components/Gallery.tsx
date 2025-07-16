@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Image as ImageIcon, Play, Calendar, Clock, Eye, X, Wifi, WifiOff } from 'lucide-react'
 import { League_Spartan } from 'next/font/google'
 import ImageLightbox from './ImageLightbox'
-import { useGalleryItems } from '@/utils/hybridStorage'
+import { useGalleryItems } from '@/utils/supabaseStorage'
+import { isSupabaseConfigured } from '@/utils/supabase'
 
 const leagueSpartan = League_Spartan({
   subsets: ['latin'],
@@ -30,7 +31,8 @@ interface GalleryProps {
 }
 
 export default function Gallery({ userRole }: GalleryProps) {
-  const { items, isLoading, isSupabaseEnabled, saveItem, deleteItem } = useGalleryItems()
+  const { items, isLoading, error, saveItem, deleteItem } = useGalleryItems()
+  const [isSupabaseEnabled] = useState(isSupabaseConfigured())
   const [showAddForm, setShowAddForm] = useState(false)
   const [newItem, setNewItem] = useState({
     type: 'image' as 'image' | 'video',
@@ -87,7 +89,7 @@ export default function Gallery({ userRole }: GalleryProps) {
       addedAt: new Date().toISOString()
     }
 
-    // Save using hybrid storage
+    // Save using supabase storage
     await saveItem(galleryItem)
     
     // Reset form
@@ -103,7 +105,7 @@ export default function Gallery({ userRole }: GalleryProps) {
   const handleDeleteItem = async (itemId: string) => {
     if (userRole !== 'admin' && userRole !== 'super-admin') return
     
-    // Delete using hybrid storage
+    // Delete using supabase storage
     await deleteItem(itemId)
   }
 

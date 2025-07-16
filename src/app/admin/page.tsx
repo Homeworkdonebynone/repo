@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Shield, Users, Key, Trash2, Plus, Globe, Calendar, Eye, LogOut, FileText, Activity, Clock, MapPin } from 'lucide-react'
 import { League_Spartan } from 'next/font/google'
+import { isSupabaseConfigured } from '../../utils/supabase'
 
 const leagueSpartan = League_Spartan({
   subsets: ['latin'],
@@ -107,33 +108,44 @@ export default function AdminPanel() {
   }
   const loadAdminData = async () => {
     try {
-      // Import hybrid storage utilities
-      const { 
-        visitorLogsStorage, 
-        rateLimitsStorage, 
-        invinciblePagesStorage, 
-        activityLogsStorage 
-      } = await import('../../utils/allDataStorage')
-
-      // Load visitor logs
-      const logs = await visitorLogsStorage.getAll()
-      setVisitorLogs(logs)
-
-      // Load rate limit data
-      const rateLimits = await rateLimitsStorage.getAll()
-      setRateLimitData(rateLimits)
-
-      // Load all wiki pages
-      const savedPages = localStorage.getItem('dorps-wiki-pages')
-      if (savedPages) {
-        setAllPages(JSON.parse(savedPages))
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured')
+        return
       }
 
-      // Load invincible pages list
-      const invinciblePageIds = await invinciblePagesStorage.getAll()
-      setInvinciblePages(invinciblePageIds)
+      // Load visitor logs
+      const { visitorLogsStorage } = await import('../../utils/supabaseStorage')
+      const logs = await visitorLogsStorage.getAll()
+      const transformedLogs = logs.map(log => ({
+        id: log.id,
+        timestamp: log.timestamp,
+        country: log.country,
+        ip: log.ip,
+        userAgent: log.user_agent,
+        page: log.page
+      }))
+      setVisitorLogs(transformedLogs)
+
+      // Load rate limit data
+      const { rateLimitsStorage } = await import('../../utils/supabaseStorage')
+      const rateLimitsData = await rateLimitsStorage.getAll()
+      const transformedRateLimits = rateLimitsData.map(limit => ({
+        id: limit.ip,
+        ip: limit.ip,
+        attempts: limit.attempts,
+        lastAttempt: limit.last_attempt,
+        lockoutUntil: limit.lockout_until
+      }))
+      setRateLimitData(transformedRateLimits)
+
+      // Load invincible pages
+      const { invinciblePagesStorage } = await import('../../utils/supabaseStorage')
+      const invincibleData = await invinciblePagesStorage.getAll()
+      const pageIds = invincibleData.map(item => item.page_id)
+      setInvinciblePages(pageIds)
 
       // Load activity logs
+      const { activityLogsStorage } = await import('../../utils/supabaseStorage')
       const activityLogsData = await activityLogsStorage.getAll()
       setActivityLogs(activityLogsData)
 
@@ -189,7 +201,7 @@ export default function AdminPanel() {
         page: `${page} (${title})`
       }
 
-      const { visitorLogsStorage } = await import('../../utils/allDataStorage')
+      const { visitorLogsStorage } = await import('../../utils/supabaseStorage')
       await visitorLogsStorage.save(newLog)
       
       // Update local state
@@ -200,32 +212,46 @@ export default function AdminPanel() {
   }
 
   const clearRateLimit = async (ip: string) => {
-    const { rateLimitsStorage } = await import('../../utils/allDataStorage')
+    const { rateLimitsStorage } = await import('../../utils/supabaseStorage')
     await rateLimitsStorage.clear(ip)
     
-    const updatedData = { ...rateLimitData }
-    delete updatedData[ip]
-    setRateLimitData(updatedData)
+    // Update local state
+    setRateLimitData((prev: any) => prev.filter((limit: any) => limit.ip !== ip))
   }
 
   const clearAllRateLimits = async () => {
-    const { rateLimitsStorage } = await import('../../utils/allDataStorage')
+    const { rateLimitsStorage } = await import('../../utils/supabaseStorage')
     await rateLimitsStorage.clear()
     
     setRateLimitData({})
   }
 
   const toggleInvinciblePage = async (pageId: string) => {
-    const { invinciblePagesStorage } = await import('../../utils/allDataStorage')
+    const { invinciblePagesStorage } = await import('../../utils/supabaseStorage')
+    
+    console.log('Toggling invincible status for page:', pageId)
+    console.log('Current invincible pages:', invinciblePages)
+    
     const isCurrentlyInvincible = invinciblePages.includes(pageId)
+    console.log('Is currently invincible:', isCurrentlyInvincible)
     
-    await invinciblePagesStorage.toggle(pageId, !isCurrentlyInvincible, 'super-admin')
-    
-    const updatedInvinciblePages = isCurrentlyInvincible
-      ? invinciblePages.filter(id => id !== pageId)
-      : [...invinciblePages, pageId]
-    
-    setInvinciblePages(updatedInvinciblePages)
+    if (isCurrentlyInvincible) {
+      // Remove from invincible pages
+      const success = await invinciblePagesStorage.remove(pageId)
+      console.log('Remove result:', success)
+      
+      if (success) {
+        setInvinciblePages(prev => prev.filter(id => id !== pageId))
+      }
+    } else {
+      // Add to invincible pages
+      const result = await invinciblePagesStorage.add(pageId)
+      console.log('Add result:', result)
+      
+      if (result) {
+        setInvinciblePages(prev => [...prev, pageId])
+      }
+    }
   }
 
   const getCountryFromIP = async (ip: string): Promise<string> => {
@@ -290,7 +316,7 @@ export default function AdminPanel() {
   }
 
   const clearVisitorLogs = async () => {
-    const { visitorLogsStorage } = await import('../../utils/allDataStorage')
+    const { visitorLogsStorage } = await import('../../utils/supabaseStorage')
     await visitorLogsStorage.clear()
     
     setVisitorLogs([])
@@ -362,8 +388,6 @@ export default function AdminPanel() {
       alert('Failed to delete user')
     }
   }
-
-  // ... existing code ...
 
   if (isLoading) {
     return (

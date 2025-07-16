@@ -1,6 +1,6 @@
 {
-  "name": "Dorps Wiki",
-  "short_name": "Dorps Wiki",
+  "name": "dorps.me",
+  "short_name": "dorps.me",
   "description": "Collaborative wiki platform",
   "start_url": "/",
   "display": "standalone",
